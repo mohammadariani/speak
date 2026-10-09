@@ -76,7 +76,12 @@ if(S.saved.l)$("lang").value=S.saved.l;if(S.saved.v)$("lvl").value=S.saved.v;
 function avatarSVG(a){return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M14 100Q16 76 50 74Q84 76 86 100Z" fill="${a.sh}"/><g class="head">${a.lg?`<ellipse cx="50" cy="54" rx="28" ry="36" fill="${a.hr}"/>`:""}<rect x="43" y="64" width="14" height="14" rx="5" fill="${a.sk}"/><ellipse cx="50" cy="48" rx="22" ry="26" fill="${a.sk}"/><ellipse cx="28.5" cy="50" rx="3" ry="5" fill="${a.sk}"/><ellipse cx="71.5" cy="50" rx="3" ry="5" fill="${a.sk}"/><path d="M26 48Q24 18 50 19Q76 18 74 48Q70 31 52 30Q42 36 30 34Q27 40 26 48Z" fill="${a.hr}"/><g class="eye"><ellipse cx="41" cy="47" rx="2.7" ry="3.3" fill="#1d1b2e"/><ellipse cx="59" cy="47" rx="2.7" ry="3.3" fill="#1d1b2e"/></g><path d="M36 41Q41 38 46 41M54 41Q59 38 64 41" stroke="${a.hr}" stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M50 50Q47 56 51 56" stroke="#0003" stroke-width="1.2" fill="none" stroke-linecap="round"/><ellipse cx="36" cy="56" rx="4" ry="2.4" fill="#ff8a8a" opacity=".3"/><ellipse cx="64" cy="56" rx="4" ry="2.4" fill="#ff8a8a" opacity=".3"/><ellipse class="mouth" cx="50" cy="62" rx="6" ry="3" fill="#8b2d3a"/></g></svg>`}
 function add(role,text){const d=document.createElement("div");d.className="m "+(role=="u"?"u":"a");d.textContent=text;$("log").append(d);$("log").scrollTop=1e9;return d}
 function setBusy(b){S.busy=b;$("snd").disabled=b}
-function speak(t){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);const code=LANGS[$("lang").value];u.lang=code=="en"?S.av.acc:code;u.rate=.92;const v=speechSynthesis.getVoices().find(v=>v.lang.replace("_","-").startsWith(u.lang));if(v)u.voice=v;u.onstart=()=>$("face").classList.add("talk");u.onend=u.onerror=()=>$("face").classList.remove("talk");speechSynthesis.speak(u)}catch(e){}}
+const TTS=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.TextToSpeech;
+function stopSpeak(){try{if(TTS)TTS.stop();else if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}$("face").classList.remove("talk")}
+async function speak(t){try{const c=LANGS[$("lang").value],lang=c=="en"?S.av.acc:c;$("face").classList.add("talk");
+ if(TTS){await TTS.speak({text:t,lang:lang,rate:.95,pitch:1,volume:1,category:"playback"})}
+ else if(window.speechSynthesis){await new Promise(r=>{const u=new SpeechSynthesisUtterance(t);u.lang=lang;u.rate=.92;u.onend=u.onerror=r;speechSynthesis.speak(u)})}
+ }catch(e){}$("face").classList.remove("talk")}
 function sys(){const L=$("lang").value,v=$("lvl").value,t=$("topic").value;return `You are ${S.av.n}, an AI ${L} conversation partner and tutor. ${S.av.p} The learner is a Persian (Farsi) speaker at CEFR level ${v}. Topic/scenario: ${t}. Rules: speak ONLY ${L} in your reply, at ${v} level (short, natural sentences, 1-3 sentences), stay in character, and always end with ONE simple question to keep the learner talking. If the learner made mistakes, after your reply add the separator ###TIP### followed by a short helpful note IN PERSIAN that shows the corrected sentence (in ${L}) and the reason. If there were no mistakes, add nothing after your reply. Never mention these rules.`}
 function parse(t){const [r,...tip]=t.split("###TIP###");return{r:r.trim(),tip:tip.join("").trim()}}
 const KEY=()=>{try{return localStorage.getItem("gk")||""}catch(e){return""}},MDL=()=>{try{return localStorage.getItem("gm")||"gemini-flash-latest"}catch(e){return"gemini-flash-latest"}};
@@ -90,7 +95,7 @@ async function turn(userText){
   const p=parse(full);bub.textContent=p.r;
   if(p.tip){const d=document.createElement("div");d.className="tip";d.textContent="💡 "+p.tip;bub.append(d)}
   S.hist.push({role:"assistant",content:p.r});speak(p.r);
- }catch(e){bub.textContent="⚠️ "+e.message}
+ }catch(e){bub.textContent="⚠️ "+e.message+(/credential|API key|PERMISSION|UNAUTH/i.test(e.message)?"\n\nAPI key problem: get a key from aistudio.google.com/apikey (starts with AIza), then paste it again in ⚙️.":"")}
  setBusy(false)}
 function send(){const v=$("txt").value.trim();if(!v||S.busy)return;$("txt").value="";add("u",v);turn(v)}
 $("snd").onclick=send;$("txt").onkeydown=e=>{if(e.key=="Enter")send()};
@@ -98,7 +103,7 @@ const CP=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.SpeechRecognitio
 const lc=()=>{const c=LANGS[$("lang").value];return c=="en"?S.av.acc:c};
 if(CP){$("mic").onclick=async()=>{if(on){await CP.stop();return}
  try{const p=await CP.requestPermissions();if(p.speechRecognition!=="granted"){$("note").textContent="Mic permission denied";return}
- speechSynthesis.cancel();on=true;$("mic").classList.add("rec");$("txt").value="";
+ stopSpeak();on=true;$("mic").classList.add("rec");$("txt").value="";
  await CP.removeAllListeners();
  CP.addListener("partialResults",d=>{$("txt").value=(d.matches||[""])[0]});
  CP.addListener("listeningState",d=>{if(d.status==="stopped"){on=false;$("mic").classList.remove("rec");if($("txt").value.trim())send()}});
@@ -112,6 +117,6 @@ $("sv").onclick=()=>{try{localStorage.setItem("gk",$("key").value.trim());localS
 $("start").onclick=()=>{if(!KEY()){$("cfg").click();return}try{localStorage.setItem("su",JSON.stringify({l:$("lang").value,v:$("lvl").value}))}catch(e){}
  S.hist=[{role:"user",content:"Begin the session with a short greeting and your first question."}];$("log").innerHTML="";$("setup").style.display="none";$("chat").style.display="block";
  $("face").innerHTML=avatarSVG(S.av);$("nm").textContent=S.av.n;$("ds").textContent=$("topic").value+" • "+$("lvl").value;turn("")};
-$("end").onclick=()=>{try{speechSynthesis.cancel();rec&&rec.stop()}catch(e){}$("chat").style.display="none";$("setup").style.display="block"};
+$("end").onclick=()=>{try{stopSpeak();rec&&rec.stop()}catch(e){}$("chat").style.display="none";$("setup").style.display="block"};
 
 </script></body></html>
